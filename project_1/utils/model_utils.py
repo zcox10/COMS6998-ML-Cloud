@@ -163,7 +163,7 @@ class ModelUtils:
             operational_intensity = total_flops / total_bytes
 
             peak_flops, peak_mem_bw = self._plot_roofline_model(
-                device, total_flops, operational_intensity, roofline_model_save_file
+                device, total_flops, operational_intensity, roofline_model_save_file, model_name=model.__class__.__name__
             )
 
             self._save_training_metrics_df(
@@ -423,7 +423,7 @@ class ModelUtils:
         df.to_csv(training_metrics_save_file, index=False)
 
     def _plot_roofline_model(
-        self, device, total_flops, operational_intensity, roofline_model_save_file
+        self, device, total_flops, operational_intensity, roofline_model_save_file, model_name
     ):
         peak_flops = self._get_peak_flops(device)
         peak_mem_bw = self._get_peak_mem_bandwidth(device)
@@ -437,11 +437,11 @@ class ModelUtils:
 
         plt.figure(figsize=(8, 6))
         plt.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
-        plt.scatter(operational_intensity, total_flops, color="red", label="Your Model", s=100)
+        plt.scatter(operational_intensity, total_flops, color="red", label=model_name, s=100)
 
         plt.xlabel("Operational Intensity (FLOPs/Byte)")
         plt.ylabel("Performance (FLOPs/s)")
-        plt.title("Roofline Model for Your Neural Network")
+        plt.title(f"Roofline Model - {model_name}")
         plt.legend()
         plt.grid(True, which="both", linestyle="--", linewidth=0.5)
         plt.savefig(roofline_model_save_file)

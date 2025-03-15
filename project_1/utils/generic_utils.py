@@ -22,10 +22,6 @@ class GenericUtils:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
-
         if print_seed:
             print(f"Random seed set as {seed}")
             print(f"Random scalar: {np.random.rand()}")

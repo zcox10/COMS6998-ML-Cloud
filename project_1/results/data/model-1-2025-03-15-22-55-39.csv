@@ -1,2 +1,2 @@
 model,trainable_parameters,device,gpu,total_gflops,total_gb,gflops_per_sec,mem_bandwidth_gb_s,operational_intensity,peak_flops_gb,peak_mem_bw_gb_s,samples_per_sec
-ModelOne,12196,cpu,,0.002304,3.3e-05,0.598377,0.003575,70.3125,89.232,8.7222,1330.55
+ModelOne,12196,cpu,NVIDIA L4,0.002304,0.0,0.104225,0.0,230400000000000.0,0.0,2.5991,233.3
