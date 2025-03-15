@@ -8,9 +8,9 @@ def main():
     p1 = ModelOne(device_str="cpu")
     p1.train_model()
 
-    # # ModelOne: CUDA
-    # p1 = ModelOne(device_str="cuda")
-    # p1.train_model()
+    # ModelOne: CUDA
+    p1 = ModelOne(device_str="cuda")
+    p1.train_model()
 
     # # ModelTwo: CPU
     # p2 = ModelTwo(device_str="cpu")
