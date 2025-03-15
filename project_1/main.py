@@ -4,11 +4,9 @@ from models.model_3 import ModelThree
 
 
 def main():
-    print("hi")
-
-    # # ModelOne: CPU
-    # p1 = ModelOne(device_str="cpu")
-    # p1.train_model()
+    # ModelOne: CPU
+    p1 = ModelOne(device_str="cpu")
+    p1.train_model()
 
     # # ModelOne: CUDA
     # p1 = ModelOne(device_str="cuda")
