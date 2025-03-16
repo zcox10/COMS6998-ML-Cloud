@@ -163,7 +163,11 @@ class ModelUtils:
             operational_intensity = total_flops / total_bytes
 
             peak_flops, peak_mem_bw = self._plot_roofline_model(
-                device, total_flops, operational_intensity, roofline_model_save_file, model_name=model.__class__.__name__
+                device,
+                total_flops,
+                operational_intensity,
+                roofline_model_save_file,
+                model_name=model.__class__.__name__,
             )
 
             self._save_training_metrics_df(
