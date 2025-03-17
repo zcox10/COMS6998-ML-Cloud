@@ -5,12 +5,12 @@ from models.model_3 import ModelThree
 
 def main():
     # # ModelOne: CUDA
-    # p1 = ModelOne(device_str="cuda")
-    # p1.train_model()
+    p1 = ModelOne(device_str="cuda")
+    p1.train_model()
 
-    # ModelTwo: CUDA
-    p2 = ModelTwo(device_str="cuda")
-    p2.train_model()
+    # # ModelTwo: CUDA
+    # p2 = ModelTwo(device_str="cuda")
+    # p2.train_model()
 
     # # ModelThree: CUDA
     # p3 = ModelThree(device_str="cuda")
