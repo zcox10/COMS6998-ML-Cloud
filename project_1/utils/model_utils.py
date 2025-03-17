@@ -160,12 +160,12 @@ class ModelUtils:
             if total_bytes < 1e-8:
                 print("WARNING: total_bytes is < 1e-8")
                 total_bytes = 1e-8
-            operational_intensity = total_flops / total_bytes
+            arithmetic_intensity = total_flops / total_bytes
 
             peak_flops, peak_mem_bw = self._plot_roofline_model(
                 device,
-                total_flops,
-                operational_intensity,
+                flops_per_sec,
+                arithmetic_intensity,
                 roofline_model_save_file,
                 model_name=model.__class__.__name__,
             )
@@ -178,13 +178,22 @@ class ModelUtils:
                     ],
                     "device": [device],
                     "gpu": [torch.cuda.get_device_name(0) if torch.cuda.is_available() else None],
+                    
+                    "total_flops": [round(total_flops, 6)],
+                    "total_bytes": [round(total_bytes, 6)],
+                    "mem_bandwidth": [round(mem_bytes_per_sec, 6)],
+                    "peak_flops": [round(peak_flops, 4)],
+                    "peak_mem_bw": [round(peak_mem_bw, 4)],
+
                     "total_gflops": [round(total_flops / 1e9, 6)],
                     "total_gb": [round(total_bytes / 1e9, 6)],
-                    "gflops_per_sec": [round(flops_per_sec / 1e9, 6)],
                     "mem_bandwidth_gb_s": [round(mem_bytes_per_sec / 1e9, 6)],
-                    "operational_intensity": [round(operational_intensity, 6)],
                     "peak_flops_gb": [round(peak_flops / 1e9, 4)],
                     "peak_mem_bw_gb_s": [round(peak_mem_bw / 1e9, 4)],
+                    
+                    "arithmetic_intensity": [round(arithmetic_intensity, 6)],
+                    "flops_per_sec": [round(flops_per_sec, 6)],
+                    
                     "samples_per_sec": [round(samples_per_sec, 2)],
                 },
                 training_metrics_save_file=training_metrics_save_file,
@@ -427,10 +436,12 @@ class ModelUtils:
         df.to_csv(training_metrics_save_file, index=False)
 
     def _plot_roofline_model(
-        self, device, total_flops, operational_intensity, roofline_model_save_file, model_name
+        self, device, total_flops, arithmetic_intensity, roofline_model_save_file, model_name
     ):
         peak_flops = self._get_peak_flops(device)
         peak_mem_bw = self._get_peak_mem_bandwidth(device)
+        print(f"Peak flops: {peak_flops}")
+        print(f"Peak mem_bw: {peak_mem_bw}")
 
         # Define X-axis range in log scale
         OI_values = np.logspace(-2, 4, 100)
@@ -441,9 +452,9 @@ class ModelUtils:
 
         plt.figure(figsize=(8, 6))
         plt.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
-        plt.scatter(operational_intensity, total_flops, color="red", label=model_name, s=100)
+        plt.scatter(arithmetic_intensity, total_flops, color="red", label=model_name, s=100)
 
-        plt.xlabel("Operational Intensity (FLOPs/Byte)")
+        plt.xlabel("Arithmetic Intensity (FLOPs/Byte)")
         plt.ylabel("Performance (FLOPs/s)")
         plt.title(f"Roofline Model - {model_name}")
         plt.legend()

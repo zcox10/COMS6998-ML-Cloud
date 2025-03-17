@@ -1,2 +1,0 @@
-model,trainable_parameters,device,gpu,total_gflops,total_gb,gflops_per_sec,mem_bandwidth_gb_s,operational_intensity,peak_flops_gb,peak_mem_bw_gb_s,samples_per_sec
-ModelTwo,2192132,cuda,NVIDIA L4,5.55339,0.0,281.252395,0.0,5.553389568e+17,0.0,2.558,16.98
