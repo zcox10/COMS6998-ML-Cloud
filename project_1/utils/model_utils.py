@@ -42,7 +42,6 @@ class ModelUtils:
         - val_labels, val_predictions
         """
 
-        start_training_time = time.perf_counter()
         train_losses = []
         val_losses = []
         best_val_loss = float("inf")
@@ -142,19 +141,17 @@ class ModelUtils:
             elif scheduler is not None:
                 scheduler.step()
 
-        # end training time
-        end_training_time = time.perf_counter()
-        total_samples = epochs * (len(train_dataloader) + len(val_dataloader))
-        samples_per_sec = (total_samples / (end_training_time - start_training_time))
-
         if profile_model:
             peak_flops, peak_mem_bw = self._get_peak_specs(device)
-            total_flops, total_bytes, total_time = self._compute_roofline_metrics(model, input_shape, device, warmup=10, iterations=100)
+            total_flops, total_bytes, total_time = self._compute_roofline_metrics(
+                model, input_shape, device, warmup=10, iterations=100
+            )
             if total_bytes < 1e-8:
                 print("WARNING: total_bytes < 1e-8")
 
             arithmetic_intensity = total_flops / total_bytes
             performance = total_flops / total_time
+            total_samples = epochs * (len(train_dataloader) + len(val_dataloader))
 
             print(f"\n{model.__class__.__name__} Metrics...")
             print(f"Peak GFlops: {round(peak_flops / 1e9, 2)}")
@@ -175,7 +172,7 @@ class ModelUtils:
                 total_flops,
                 total_bytes,
                 total_time,
-                roofline_model_save_file,    
+                roofline_model_save_file,
                 model_name=model.__class__.__name__,
             )
 
@@ -435,30 +432,30 @@ class ModelUtils:
         df.to_csv(training_metrics_save_file, index=False)
 
     def _plot_roofline_model(
-            self, 
-            device,
-            total_samples,
-            arithmetic_intensity,
-            performance,
-            peak_flops,
-            peak_mem_bw,
-            total_flops,
-            total_bytes,
-            total_time,
-            roofline_model_save_file,
-            model_name
-        ):
+        self,
+        device,
+        total_samples,
+        arithmetic_intensity,
+        performance,
+        peak_flops,
+        peak_mem_bw,
+        total_flops,
+        total_bytes,
+        total_time,
+        roofline_model_save_file,
+        model_name,
+    ):
         gpu_name = torch.cuda.get_device_properties(device).name
         plot_title = model_name + " - " + gpu_name
 
         # Two subplots (roofline model and text)
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), gridspec_kw={'height_ratios': [4, 1]})
-        
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), gridspec_kw={"height_ratios": [4, 1]})
+
         # roofline plot
         OI_values = np.logspace(-2, 4, 100)
-        compute_bound = np.full_like(OI_values, peak_flops) # horizontal line (compute-bound)
-        memory_bound = OI_values * peak_mem_bw # sloped line (memory-bound)
-        
+        compute_bound = np.full_like(OI_values, peak_flops)  # horizontal line (compute-bound)
+        memory_bound = OI_values * peak_mem_bw  # sloped line (memory-bound)
+
         ax1.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
         ax1.scatter(arithmetic_intensity, performance, color="red", label=plot_title, s=100)
         ax1.set_xlabel("Arithmetic Intensity (FLOPs/Byte)")
@@ -466,13 +463,13 @@ class ModelUtils:
         ax1.set_title(f"Roofline Model - {model_name} - {gpu_name}")
         ax1.legend()
         ax1.grid(True, which="both", linestyle="--", linewidth=0.5)
-        
+
         # Build a string with metrics for 2nd row subplot
         peak_gflops = round(peak_flops / 1e9, 2)
         total_gflops = round(total_flops / 1e9, 2)
         peak_mem_bandwidth_gb_per_sec = round(peak_mem_bw / 1e9, 2)
         total_gb = round(total_bytes / 1e9, 2)
-        total_time = round(total_time, 2)  
+        total_time = round(total_time, 2)
 
         stats_text = (
             f"Model Name: {model_name}\n"
@@ -488,58 +485,70 @@ class ModelUtils:
         )
         # Turn off the axis on the bottom subplot and center the text
         ax2.axis("off")
-        ax2.text(0.05, 0.5, stats_text, horizontalalignment="left", verticalalignment="center", fontsize=12, transform=ax2.transAxes)
-        
+        ax2.text(
+            0.05,
+            0.5,
+            stats_text,
+            horizontalalignment="left",
+            verticalalignment="center",
+            fontsize=12,
+            transform=ax2.transAxes,
+        )
+
         plt.tight_layout()
         plt.savefig(roofline_model_save_file)
-
 
     def _compute_roofline_metrics(self, model, input_shape, device, warmup, iterations):
         """
         Compute total FLOPs, total bytes moved, and total time for a model's forward pass.
         """
-        
+
         # Move model and dummy input to the device
         model = model.to(device)
         dummy_input = torch.randn(*input_shape, device=device)
-        
+
         # Run a few warm-up iterations
         for _ in range(warmup):
             _ = model(dummy_input)
+
         if str(device) == "cuda":
             torch.cuda.synchronize()
-        
+
         # Profile model across the specified number of iterations.
         start = time.perf_counter()
         with profile(
-            activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if str(device) == "cuda" else []),
+            activities=[ProfilerActivity.CPU]
+            + ([ProfilerActivity.CUDA] if str(device) == "cuda" else []),
             with_flops=True,
             profile_memory=True,
-            record_shapes=True
+            record_shapes=True,
         ) as prof:
             for _ in range(iterations):
                 _ = model(dummy_input)
+
         if str(device) == "cuda":
             torch.cuda.synchronize()
+
         end = time.perf_counter()
-        
         total_time = end - start
-        
+
         # Sum up FLOPs and memory usage across all events.
         total_flops = sum(event.flops for event in prof.key_averages() if event.flops is not None)
-        
+
         # Total CPU and GPU memory
-        total_cpu_mem = sum(event.cpu_memory_usage for event in prof.key_averages() if event.cpu_memory_usage is not None)
-        
+        total_cpu_mem = sum(
+            event.cpu_memory_usage
+            for event in prof.key_averages()
+            if event.cpu_memory_usage is not None
+        )
+
         if str(device) == "cuda":
             total_cuda_mem = torch.cuda.max_memory_allocated(device)
         else:
             total_cuda_mem = 0
 
         total_bytes = total_cpu_mem + total_cuda_mem
-        
         return total_flops, total_bytes, total_time
-
 
     def _get_peak_specs(self, device):
         props = torch.cuda.get_device_properties(device)
@@ -548,11 +557,11 @@ class ModelUtils:
         gpu_specs = {
             "Tesla T4": {
                 "peak_flops": 8.1e12,
-                "peak_mem_bandwidth": 320e9
+                "peak_mem_bandwidth": 320e9,
             },
-            "NVIDIA L4" : {
+            "NVIDIA L4": {
                 "peak_flops": 30.3e12,
-                "peak_mem_bandwidth": 300e9
+                "peak_mem_bandwidth": 300e9,
             },
         }
 
