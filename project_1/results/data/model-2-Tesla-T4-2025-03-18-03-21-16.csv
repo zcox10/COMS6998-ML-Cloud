@@ -1,0 +1,2 @@
+model,trainable_parameters,device,gpu,peak_gflops,peak_mem_bandwidth_gb_per_sec,total_gflops,total_gb,total_time,arithmetic_intensity,performance
+ModelTwo,2192132,cuda,Tesla T4,8100.0,320.0,555.34,0.24,0.59,2345.85,934809020703.62

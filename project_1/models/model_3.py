@@ -84,6 +84,7 @@ class ModelThree(torch.nn.Module):
         model_params["val_loader"] = val_loader
         print(f"Device: {model_params['device']}")
 
+        gpu_name = (torch.cuda.get_device_properties("cuda").name).replace(" ", "-")
         current_timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         training_metrics = self.utils.train_loop(
             epochs=model_params["epochs"],
@@ -100,6 +101,6 @@ class ModelThree(torch.nn.Module):
             early_stop=model_params["early_stop"],
             input_shape=(model_params["batch_size"], 3, 64, 64),
             profile_model=True,
-            roofline_model_save_file=f"results/plots/model-3-{current_timestamp}.png",
-            training_metrics_save_file=f"results/data/model-3-{current_timestamp}.csv",
+            roofline_model_save_file=f"results/plots/model-3-{gpu_name}-{current_timestamp}.png",
+            training_metrics_save_file=f"results/data/model-3-{gpu_name}-{current_timestamp}.csv",
         )

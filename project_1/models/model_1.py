@@ -81,13 +81,12 @@ class ModelOne(torch.nn.Module):
 
     def train_model(self):
         model_params = self.model_parameters()
-        train_loader, val_loader, _ = self.data_processing(
-            model_params["feature_cols"], model_params["batch_size"]
-        )
+        train_loader, val_loader, _ = self.data_processing(model_params["feature_cols"], model_params["batch_size"])
         model_params["train_loader"] = train_loader
         model_params["val_loader"] = val_loader
         print(f"Device: {model_params['device']}")
 
+        gpu_name = (torch.cuda.get_device_properties("cuda").name).replace(" ", "-")
         current_timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         training_metrics = self.utils.train_loop(
             epochs=model_params["epochs"],
@@ -104,6 +103,6 @@ class ModelOne(torch.nn.Module):
             early_stop=model_params["early_stop"],
             input_shape=(model_params["batch_size"], 9),
             profile_model=True,
-            roofline_model_save_file=f"results/plots/model-1-{current_timestamp}.png",
-            training_metrics_save_file=f"results/data/model-1-{current_timestamp}.csv",
+            roofline_model_save_file=f"results/plots/model-1-{gpu_name}-{current_timestamp}.png",
+            training_metrics_save_file=f"results/data/model-1-{gpu_name}-{current_timestamp}.csv",
         )

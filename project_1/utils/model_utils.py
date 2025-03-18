@@ -144,11 +144,8 @@ class ModelUtils:
 
         # end training time
         end_training_time = time.perf_counter()
-        samples_per_sec = (
-            epochs
-            * (len(train_dataloader) + len(val_dataloader))
-            / (end_training_time - start_training_time)
-        )
+        total_samples = epochs * (len(train_dataloader) + len(val_dataloader))
+        samples_per_sec = (total_samples / (end_training_time - start_training_time))
 
         if profile_model:
             peak_flops, peak_mem_bw = self._get_peak_specs(device)
@@ -169,11 +166,16 @@ class ModelUtils:
             print(f"Performance: {round(performance, 2)}\n")
 
             self._plot_roofline_model(
+                device,
+                total_samples,
                 arithmetic_intensity,
                 performance,
                 peak_flops,
                 peak_mem_bw,
-                roofline_model_save_file,
+                total_flops,
+                total_bytes,
+                total_time,
+                roofline_model_save_file,    
                 model_name=model.__class__.__name__,
             )
 
@@ -433,24 +435,62 @@ class ModelUtils:
         df.to_csv(training_metrics_save_file, index=False)
 
     def _plot_roofline_model(
-        self, arithmetic_intensity, performance, peak_flops, peak_mem_bw, roofline_model_save_file, model_name
-    ):
-        # Define X-axis range in log scale
+            self, 
+            device,
+            total_samples,
+            arithmetic_intensity,
+            performance,
+            peak_flops,
+            peak_mem_bw,
+            total_flops,
+            total_bytes,
+            total_time,
+            roofline_model_save_file,
+            model_name
+        ):
+        gpu_name = torch.cuda.get_device_properties(device).name
+        plot_title = model_name + " - " + gpu_name
+
+        # Two subplots (roofline model and text)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), gridspec_kw={'height_ratios': [4, 1]})
+        
+        # roofline plot
         OI_values = np.logspace(-2, 4, 100)
+        compute_bound = np.full_like(OI_values, peak_flops) # horizontal line (compute-bound)
+        memory_bound = OI_values * peak_mem_bw # sloped line (memory-bound)
+        
+        ax1.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
+        ax1.scatter(arithmetic_intensity, performance, color="red", label=plot_title, s=100)
+        ax1.set_xlabel("Arithmetic Intensity (FLOPs/Byte)")
+        ax1.set_ylabel("Performance (FLOPs/s)")
+        ax1.set_title(f"Roofline Model - {model_name} - {gpu_name}")
+        ax1.legend()
+        ax1.grid(True, which="both", linestyle="--", linewidth=0.5)
+        
+        # Build a string with metrics for 2nd row subplot
+        peak_gflops = round(peak_flops / 1e9, 2)
+        total_gflops = round(total_flops / 1e9, 2)
+        peak_mem_bandwidth_gb_per_sec = round(peak_mem_bw / 1e9, 2)
+        total_gb = round(total_bytes / 1e9, 2)
+        total_time = round(total_time, 2)  
 
-        # Compute roofline curve
-        compute_bound = np.full_like(OI_values, peak_flops)  # Compute-bound horizontal line
-        memory_bound = OI_values * peak_mem_bw  # Memory-bound sloped line
-
-        plt.figure(figsize=(8, 6))
-        plt.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
-        plt.scatter(arithmetic_intensity, performance, color="red", label=model_name, s=100)
-
-        plt.xlabel("Arithmetic Intensity (FLOPs/Byte)")
-        plt.ylabel("Performance (FLOPs/s)")
-        plt.title(f"Roofline Model - {model_name}")
-        plt.legend()
-        plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+        stats_text = (
+            f"Model Name: {model_name}\n"
+            f"GPU Name: {gpu_name}\n"
+            f"Total Training Samples: {total_samples:,}\n"
+            f"Peak GFlops: {peak_gflops}\n"
+            f"Peak Mem Bandwidth (GB/sec): {peak_mem_bandwidth_gb_per_sec}\n"
+            f"Total GFlops: {total_gflops}\n"
+            f"Total GB: {total_gb}\n"
+            f"Total Time: {total_time}\n"
+            f"AI: {round(arithmetic_intensity, 2)}\n"
+            f"Performance: {round(performance, 2)}"
+        )
+        # Turn off the axis on the bottom subplot and center the text
+        ax2.axis("off")
+        ax2.text(0.05, 0.5, stats_text, horizontalalignment="left", verticalalignment="center", fontsize=12, transform=ax2.transAxes)
+        
+        plt.tight_layout()
         plt.savefig(roofline_model_save_file)
 
 
