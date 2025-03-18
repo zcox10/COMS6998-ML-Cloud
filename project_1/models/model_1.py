@@ -81,7 +81,9 @@ class ModelOne(torch.nn.Module):
 
     def train_model(self):
         model_params = self.model_parameters()
-        train_loader, val_loader, _ = self.data_processing(model_params["feature_cols"], model_params["batch_size"])
+        train_loader, val_loader, _ = self.data_processing(
+            model_params["feature_cols"], model_params["batch_size"]
+        )
         model_params["train_loader"] = train_loader
         model_params["val_loader"] = val_loader
         print(f"Device: {model_params['device']}")
