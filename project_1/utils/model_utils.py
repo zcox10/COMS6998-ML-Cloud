@@ -4,12 +4,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import torch.profiler
+from torch.profiler import profile, ProfilerActivity
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-import psutil
-import subprocess
 
 
 class ModelUtils:
@@ -153,19 +151,28 @@ class ModelUtils:
         )
 
         if profile_model:
-            total_flops, flops_per_sec = self._compute_flops(model, input_shape, device)
-            total_bytes, mem_bytes_per_sec = self._compute_memory_bandwidth(
-                model, train_dataloader, device
-            )
+            peak_flops, peak_mem_bw = self._get_peak_specs(device)
+            total_flops, total_bytes, total_time = self._compute_roofline_metrics(model, input_shape, device, warmup=10, iterations=100)
             if total_bytes < 1e-8:
-                print("WARNING: total_bytes is < 1e-8")
-                total_bytes = 1e-8
-            arithmetic_intensity = total_flops / total_bytes
+                print("WARNING: total_bytes < 1e-8")
 
-            peak_flops, peak_mem_bw = self._plot_roofline_model(
-                device,
-                flops_per_sec,
+            arithmetic_intensity = total_flops / total_bytes
+            performance = total_flops / total_time
+
+            print(f"\n{model.__class__.__name__} Metrics...")
+            print(f"Peak GFlops: {round(peak_flops / 1e9, 2)}")
+            print(f"Peak Mem Bandwidth (GB/sec): {round(peak_mem_bw / 1e9, 2)}")
+            print(f"Total GFlops: {round(total_flops / 1e9, 2)}")
+            print(f"Total GB: {round(total_bytes / 1e9,2)}")
+            print(f"Total Time: {round(total_time, 2)}")
+            print(f"AI: {round(arithmetic_intensity, 2)}")
+            print(f"Performance: {round(performance, 2)}\n")
+
+            self._plot_roofline_model(
                 arithmetic_intensity,
+                performance,
+                peak_flops,
+                peak_mem_bw,
                 roofline_model_save_file,
                 model_name=model.__class__.__name__,
             )
@@ -178,23 +185,13 @@ class ModelUtils:
                     ],
                     "device": [device],
                     "gpu": [torch.cuda.get_device_name(0) if torch.cuda.is_available() else None],
-                    
-                    "total_flops": [round(total_flops, 6)],
-                    "total_bytes": [round(total_bytes, 6)],
-                    "mem_bandwidth": [round(mem_bytes_per_sec, 6)],
-                    "peak_flops": [round(peak_flops, 4)],
-                    "peak_mem_bw": [round(peak_mem_bw, 4)],
-
-                    "total_gflops": [round(total_flops / 1e9, 6)],
-                    "total_gb": [round(total_bytes / 1e9, 6)],
-                    "mem_bandwidth_gb_s": [round(mem_bytes_per_sec / 1e9, 6)],
-                    "peak_flops_gb": [round(peak_flops / 1e9, 4)],
-                    "peak_mem_bw_gb_s": [round(peak_mem_bw / 1e9, 4)],
-                    
-                    "arithmetic_intensity": [round(arithmetic_intensity, 6)],
-                    "flops_per_sec": [round(flops_per_sec, 6)],
-                    
-                    "samples_per_sec": [round(samples_per_sec, 2)],
+                    "peak_gflops": [round(peak_flops / 1e9, 2)],
+                    "peak_mem_bandwidth_gb_per_sec": [round(peak_mem_bw / 1e9, 2)],
+                    "total_gflops": [round(total_flops / 1e9, 2)],
+                    "total_gb": [round(total_bytes / 1e9, 2)],
+                    "total_time": [round(total_time, 2)],
+                    "arithmetic_intensity": [round(arithmetic_intensity, 2)],
+                    "performance": [round(performance, 2)],
                 },
                 training_metrics_save_file=training_metrics_save_file,
             )
@@ -436,13 +433,8 @@ class ModelUtils:
         df.to_csv(training_metrics_save_file, index=False)
 
     def _plot_roofline_model(
-        self, device, total_flops, arithmetic_intensity, roofline_model_save_file, model_name
+        self, arithmetic_intensity, performance, peak_flops, peak_mem_bw, roofline_model_save_file, model_name
     ):
-        peak_flops = self._get_peak_flops(device)
-        peak_mem_bw = self._get_peak_mem_bandwidth(device)
-        print(f"Peak flops: {peak_flops}")
-        print(f"Peak mem_bw: {peak_mem_bw}")
-
         # Define X-axis range in log scale
         OI_values = np.logspace(-2, 4, 100)
 
@@ -452,7 +444,7 @@ class ModelUtils:
 
         plt.figure(figsize=(8, 6))
         plt.loglog(OI_values, np.minimum(compute_bound, memory_bound), "k-", label="Roofline")
-        plt.scatter(arithmetic_intensity, total_flops, color="red", label=model_name, s=100)
+        plt.scatter(arithmetic_intensity, performance, color="red", label=model_name, s=100)
 
         plt.xlabel("Arithmetic Intensity (FLOPs/Byte)")
         plt.ylabel("Performance (FLOPs/s)")
@@ -461,134 +453,69 @@ class ModelUtils:
         plt.grid(True, which="both", linestyle="--", linewidth=0.5)
         plt.savefig(roofline_model_save_file)
 
-        return peak_flops, peak_mem_bw
 
-    def _compute_memory_bandwidth(self, model, data_loader, device):
-        model.to(device)
-        total_bytes = 0
-        start_time = time.perf_counter()
-        process = psutil.Process()
-
-        for inputs, _ in data_loader:
-            inputs = inputs.to(device)
-
-            # Measure before memory allocation
-            if device == "cuda":
-                torch.cuda.synchronize()
-                torch.cuda.reset_peak_memory_stats(device)
-                mem_start = torch.cuda.memory_allocated(device)
-            else:
-                mem_start = process.memory_info().rss
-
-            # Forward Pass
-            _ = model(inputs)
-
-            # Measure after memory allocation
-            if device == "cuda":
-                torch.cuda.synchronize()
-                mem_end = torch.cuda.max_memory_allocated(device)
-            else:
-                mem_end = process.memory_info().rss
-
-            total_bytes += mem_end - mem_start
-
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-
-        # Bandwidth
-        return total_bytes, total_bytes / elapsed_time
-
-    def _compute_flops(self, model, input_shape, device):
+    def _compute_roofline_metrics(self, model, input_shape, device, warmup, iterations):
+        """
+        Compute total FLOPs, total bytes moved, and total time for a model's forward pass.
+        """
+        
+        # Move model and dummy input to the device
         model = model.to(device)
-        dummy_input = torch.randn(*input_shape).to(device)
-
-        if device == "cuda":
+        dummy_input = torch.randn(*input_shape, device=device)
+        
+        # Run a few warm-up iterations
+        for _ in range(warmup):
+            _ = model(dummy_input)
+        if str(device) == "cuda":
             torch.cuda.synchronize()
-
+        
+        # Profile model across the specified number of iterations.
         start = time.perf_counter()
-
-        with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CPU]
-            + ([torch.profiler.ProfilerActivity.CUDA] if device == "cuda" else []),
-            record_shapes=True,
+        with profile(
+            activities=[ProfilerActivity.CPU] + ([ProfilerActivity.CUDA] if str(device) == "cuda" else []),
             with_flops=True,
+            profile_memory=True,
+            record_shapes=True
         ) as prof:
-            model(dummy_input)
-
-        if device == "cuda":
+            for _ in range(iterations):
+                _ = model(dummy_input)
+        if str(device) == "cuda":
             torch.cuda.synchronize()
         end = time.perf_counter()
-
-        total_flops = sum([event.flops for event in prof.key_averages() if event.flops is not None])
-        flops_per_sec = total_flops / (end - start)
-        return total_flops, flops_per_sec
-
-    def _detect_avx(self):
-        """Check for AVX/AVX2/AVX-512 support"""
-        try:
-            output = subprocess.check_output("lscpu", shell=True).decode()
-            if "avx512f" in output:
-                return 16  # AVX-512: 16 FLOPs per cycle
-            elif "avx2" in output:
-                return 8  # AVX2: 8 FLOPs per cycle
-            elif "avx" in output:
-                return 4  # AVX: 4 FLOPs per cycle
-            else:
-                return 2  # No AVX support
-        except Exception as e:
-            print(f"Error detecting AVX support: {e}")
-            return 2
-
-    def _get_peak_flops(self, device):
-        if device == "cuda":
-            device = torch.cuda.current_device()
-            props = torch.cuda.get_device_properties(device)
-
-            # Compute FLOP/s estimate
-            cores_per_sm = {
-                5.0: 128,
-                5.2: 128,
-                5.3: 128,  # Maxwell
-                6.0: 64,
-                6.1: 128,
-                6.2: 128,  # Pascal
-                7.0: 64,
-                7.2: 64,
-                7.5: 64,  # Volta & Turing
-                8.0: 64,
-                8.6: 128,
-                8.9: 128,  # Ampere
-                9.0: 128,  # Hopper
-            }
-
-            sm_count = props.multi_processor_count
-            sm_architecture = props.major + props.minor / 10.0
-            cores_per_sm_value = cores_per_sm.get(sm_architecture)
-
-            clock_speed = props.clock_rate * 1e3
-            peak_flops = sm_count * cores_per_sm_value * 2 * clock_speed
-
-            return peak_flops
-
+        
+        total_time = end - start
+        
+        # Sum up FLOPs and memory usage across all events.
+        total_flops = sum(event.flops for event in prof.key_averages() if event.flops is not None)
+        
+        # Total CPU and GPU memory
+        total_cpu_mem = sum(event.cpu_memory_usage for event in prof.key_averages() if event.cpu_memory_usage is not None)
+        
+        if str(device) == "cuda":
+            total_cuda_mem = torch.cuda.max_memory_allocated(device)
         else:
-            avx_factor = self._detect_avx()
-            cpu_freq = psutil.cpu_freq().max * 1e6
-            num_cores = psutil.cpu_count(logical=True)
+            total_cuda_mem = 0
 
-            peak_flops = num_cores * cpu_freq * avx_factor
-            return peak_flops
+        total_bytes = total_cpu_mem + total_cuda_mem
+        
+        return total_flops, total_bytes, total_time
 
-    def _get_peak_mem_bandwidth(self, device):
-        """Calculate peak memory bandwidth in bytes/s for CUDA or CPU device."""
-        if device == "cuda":
-            device = torch.cuda.current_device()
-            props = torch.cuda.get_device_properties(device)
-            return props.memory_clock_rate * 1e3 * props.memory_bus_width / 8
-        else:
-            # Run peak memory bandwidth benchmark for CPU
-            size = 2**28
-            a = np.random.randn(size).astype(np.float32)
-            start_time = time.time()
-            b = np.copy(a)
-            end_time = time.time()
-            return a.nbytes / (end_time - start_time)
+
+    def _get_peak_specs(self, device):
+        props = torch.cuda.get_device_properties(device)
+        gpu_name = props.name
+
+        gpu_specs = {
+            "Tesla T4": {
+                "peak_flops": 8.1e12,
+                "peak_mem_bandwidth": 320e9
+            },
+            "L4" : {
+                "peak_flops": 30.3e12,
+                "peak_mem_bandwidth": 300e9
+            },
+        }
+
+        peak_flops = gpu_specs[gpu_name]["peak_flops"]
+        peak_mem_bandwidth = gpu_specs[gpu_name]["peak_mem_bandwidth"]
+        return peak_flops, peak_mem_bandwidth
