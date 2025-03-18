@@ -1,0 +1,2 @@
+model,trainable_parameters,device,gpu,peak_gflops,peak_mem_bandwidth_gb_per_sec,total_gflops,total_gb,total_time,arithmetic_intensity,performance
+ModelThree,228652,cuda,NVIDIA L4,30300.0,300.0,800.63,0.33,0.67,2462.2,1197736840253.65

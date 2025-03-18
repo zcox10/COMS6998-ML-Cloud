@@ -550,7 +550,7 @@ class ModelUtils:
                 "peak_flops": 8.1e12,
                 "peak_mem_bandwidth": 320e9
             },
-            "L4" : {
+            "NVIDIA L4" : {
                 "peak_flops": 30.3e12,
                 "peak_mem_bandwidth": 300e9
             },
